@@ -24,7 +24,41 @@ class image_converter:
     # initialize the bridge between openCV and ROS
     self.bridge = CvBridge()
 
+  def detect_red(self, image):
+    mask = cv2.inRange(image, (0, 0, 80), (20, 20, 255))
+    M = cv2.moments(mask)
+    cx = int(M['m10'] / M['m00'])
+    cy = int(M['m01'] / M['m00'])
+    return np.array([cx, cy])
 
+  def detect_green(self, image):
+    mask = cv2.inRange(image, (0, 80, 0), (20, 255, 20))
+    M = cv2.moments(mask)
+    cx = int(M['m10'] / M['m00'])
+    cy = int(M['m01'] / M['m00'])
+    return np.array([cx, cy])
+
+  def detect_blue(self, image):
+    mask = cv2.inRange(image, (80, 0, 0), (255, 20, 20))
+    M = cv2.moments(mask)
+    cx = int(M['m10'] / M['m00'])
+    cy = int(M['m01'] / M['m00'])
+    return np.array([cx, cy])
+
+  def pixel2meter(self, image):
+    c_1 = self.detect_red(image)
+    c_2 = self.detect_green(image)
+    distance = np.sqrt(np.sum((c_1 - c_2) ** 2))
+    return 3 / distance
+
+  def find_angles(self, image):
+    a = self.pixel2meter(image)
+    c_b = a * self.detect_blue(image)
+    c_g = a * self.detect_green(image)
+    end_effector = a * self.detect_red(image)
+    a_2 = np.arctan2(c_b[0] - c_g[0], c_b[1] - c_g[1])
+    a_4 = np.arctan2(c_g[0] - end_effector[0], c_g[1] - end_effector[1]) - a_2
+    return np.array([a_2, a_4])
   # Recieve data from camera 1, process it, and publish
   def callback1(self,data):
     # Recieve the image
@@ -32,14 +66,15 @@ class image_converter:
       self.cv_image1 = self.bridge.imgmsg_to_cv2(data, "bgr8")
     except CvBridgeError as e:
       print(e)
-    
+
     # Uncomment if you want to save the image
     #cv2.imwrite('image_copy.png', cv_image)
 
     im1=cv2.imshow('window1', self.cv_image1)
+    print(self.find_angles(self.cv_image1))
     cv2.waitKey(1)
     # Publish the results
-    try: 
+    try:
       self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
     except CvBridgeError as e:
       print(e)
