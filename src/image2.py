@@ -19,6 +19,7 @@ class image_converter:
     rospy.init_node('image_processing', anonymous=True)
     # initialize a publisher to send images from camera2 to a topic named image_topic2
     self.image_pub2 = rospy.Publisher("image_topic2",Image, queue_size = 1)
+    self.y_coordinates = rospy.Publisher("/ycor",Float64MultiArray, queue_size = 1)
     # initialize a subscriber to recieve messages rom a topic named /robot/camera1/image_raw and use callback function to recieve data
     self.image_sub2 = rospy.Subscriber("/camera2/robot/image_raw",Image,self.callback2)
     # initialize the bridge between openCV and ROS
@@ -27,42 +28,21 @@ class image_converter:
   def detect_red(self, image):
     mask = cv2.inRange(image, (0, 0, 80), (20, 20, 255))
     M = cv2.moments(mask)
-    cx = int(M['m10'] / M['m00'])
-    cy = int(M['m01'] / M['m00'])
-    return np.array([cx, cy])
+    return int(M['m10'] / M['m00'])
 
   def detect_green(self, image):
     mask = cv2.inRange(image, (0, 80, 0), (20, 255, 20))
     M = cv2.moments(mask)
-    cx = int(M['m10'] / M['m00'])
-    cy = int(M['m01'] / M['m00'])
-    return np.array([cx, cy])
+    return int(M['m10'] / M['m00'])
 
   def detect_blue(self, image):
     mask = cv2.inRange(image, (80, 0, 0), (255, 20, 20))
     M = cv2.moments(mask)
-    cx = int(M['m10'] / M['m00'])
-    cy = int(M['m01'] / M['m00'])
-    return np.array([cx, cy])
+    return int(M['m10'] / M['m00'])
   def detect_yellow(self, image):
     mask = cv2.inRange(image, (0,200,200),(0,255,255))
     M = cv2.moments(mask)
-    cx = int(M['m10'] / M['m00'])
-    cy = int(M['m01'] / M['m00'])
-    return np.array([cx, cy])
-
-  def pixel2meter(self, image):
-    c_1 = self.detect_yellow(image)
-    c_2 = self.detect_blue(image)
-    distance = np.sqrt(np.sum((c_1 - c_2) ** 2))
-    return 2.5 / distance
-
-  def find_angle(self, image):
-    a = self.pixel2meter(image)
-    c_b = a * self.detect_blue(image)
-    c_g = a * self.detect_green(image)
-    a_3 = np.arctan2(c_b[0] - c_g[0], c_b[1] - c_g[1])
-    return np.array([0-a_3])
+    return int(M['m10'] / M['m00'])
 
   # Recieve data, process it, and publish
   def callback2(self,data):
@@ -73,10 +53,16 @@ class image_converter:
       print(e)
     # Uncomment if you want to save the image
     #cv2.imwrite('image_copy.png', cv_image)
-    im2=cv2.imshow('window2', self.cv_image2)
+    #im2=cv2.imshow('window2', self.cv_image2)
     cv2.waitKey(1)
-    print(self.find_angle(self.cv_image2))
 
+    red = self.detect_red(self.cv_image2)
+    green = self.detect_green(self.cv_image2)
+    blue = self.detect_blue(self.cv_image2)
+    yellow = self.detect_yellow(self.cv_image2)
+    y = Float64MultiArray()
+    y.data = np.array([red,green,blue,yellow])
+    self.y_coordinates.publish(y)
     # Publish the results
     try: 
       self.image_pub2.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
