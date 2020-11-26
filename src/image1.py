@@ -30,7 +30,10 @@ class image_converter:
         self.gjoint2_pub = rospy.Publisher("joint2", Float64, queue_size=10)
         self.gjoint3_pub = rospy.Publisher("joint3", Float64, queue_size=10)
         self.gjoint4_pub = rospy.Publisher("joint4", Float64, queue_size=10)
-
+        self.memory_red = [0, 0, 0]
+        self.memory_green = [0, 0, 0]
+        self.memory_blue = [0, 0, 0]
+        self.memory_yellow = [0, 0, 0]
 
         self.image_sub1 = rospy.Subscriber("/camera1/robot/image_raw", Image, self.callback1)
         # initialize the bridge between openCV and ROS
@@ -110,10 +113,26 @@ class image_converter:
             print(e)
 
     def callback(self, data):
-        red = self.detect_red(self.cv_image1)
-        green = self.detect_green(self.cv_image1)
-        blue = self.detect_blue(self.cv_image1)
-        yellow = self.detect_yellow(self.cv_image1)
+        try:
+            red = self.detect_red(self.cv_image1)
+            self.memory_red = red
+        except ZeroDivisionError:
+            red = self.memory_red
+        try:
+            green = self.detect_green(self.cv_image1)
+            self.memory_green = green
+        except ZeroDivisionError:
+            green = self.memory_green
+        try:
+            blue = self.detect_blue(self.cv_image1)
+            self.memory_blue = blue
+        except ZeroDivisionError:
+            blue = self.memory_blue
+        try:
+            yellow = self.detect_yellow(self.cv_image1)
+            self.memory_yellow = yellow
+        except ZeroDivisionError:
+            yellow = self.memory_yellow
         red[1] = data.data[0]
         green[1] = data.data[1]
         blue[1] = data.data[2]

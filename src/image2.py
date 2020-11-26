@@ -24,6 +24,10 @@ class image_converter:
     self.image_sub2 = rospy.Subscriber("/camera2/robot/image_raw",Image,self.callback2)
     # initialize the bridge between openCV and ROS
     self.bridge = CvBridge()
+    self.memory_red = [0, 0]
+    self.memory_green = [0, 0]
+    self.memory_blue = [0, 0]
+    self.memory_yellow = [0, 0]
 
   def detect_red(self, image):
     mask = cv2.inRange(image, (0, 0, 80), (20, 20, 255))
@@ -55,11 +59,26 @@ class image_converter:
     #cv2.imwrite('image_copy.png', cv_image)
     #im2=cv2.imshow('window2', self.cv_image2)
     cv2.waitKey(1)
-
-    red = self.detect_red(self.cv_image2)
-    green = self.detect_green(self.cv_image2)
-    blue = self.detect_blue(self.cv_image2)
-    yellow = self.detect_yellow(self.cv_image2)
+    try:
+      red = self.detect_red(self.cv_image2)
+      self.memory_red = red
+    except ZeroDivisionError:
+      red = self.memory_red
+    try:
+      green = self.detect_green(self.cv_image2)
+      self.memory_green = green
+    except ZeroDivisionError:
+      green = self.memory_green
+    try:
+      blue = self.detect_blue(self.cv_image2)
+      self.memory_blue = blue
+    except ZeroDivisionError:
+      blue = self.memory_blue
+    try:
+      yellow = self.detect_yellow(self.cv_image2)
+      self.memory_yellow = yellow
+    except ZeroDivisionError:
+      yellow = self.memory_yellow
     y = Float64MultiArray()
     y.data = np.array([red,green,blue,yellow])
     self.y_coordinates.publish(y)
