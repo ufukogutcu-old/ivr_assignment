@@ -13,7 +13,6 @@ from std_msgs.msg import MultiArrayDimension
 from cv_bridge import CvBridge, CvBridgeError
 
 
-
 class image_converter:
 
     # Defines publisher and subscriber
@@ -34,40 +33,45 @@ class image_converter:
         self.memory_green = [0, 0, 0]
         self.memory_blue = [0, 0, 0]
         self.memory_yellow = [0, 0, 0]
+        self.target_x_pub = rospy.Publisher("targety", Float64, queue_size=10)
+        self.target_y_pub = rospy.Publisher("targetx", Float64, queue_size=10)
+        self.target_z_pub = rospy.Publisher("targetz", Float64, queue_size=10)
+        self.circless = np.uint16(np.zeros((1, 1, 3)))
 
         self.image_sub1 = rospy.Subscriber("/camera1/robot/image_raw", Image, self.callback1)
         # initialize the bridge between openCV and ROS
         self.bridge = CvBridge()
         cv2.waitKey(10)
         self.y_cords = rospy.Subscriber("/ycor", Float64MultiArray, self.callback)
+        self.target_coordinates = rospy.Subscriber("/target_cords", Float64MultiArray, self.target_callback)
 
     def detect_red(self, image):
         mask = cv2.inRange(image, (0, 0, 80), (20, 20, 255))
         M = cv2.moments(mask)
         cx = int(M['m10'] / M['m00'])
         cy = int(M['m01'] / M['m00'])
-        return np.array([cx,0.0, cy])
+        return np.array([cx, 0.0, cy])
 
     def detect_green(self, image):
         mask = cv2.inRange(image, (0, 80, 0), (20, 255, 20))
         M = cv2.moments(mask)
         cx = int(M['m10'] / M['m00'])
         cy = int(M['m01'] / M['m00'])
-        return np.array([cx,0.0, cy])
+        return np.array([cx, 0.0, cy])
 
     def detect_blue(self, image):
         mask = cv2.inRange(image, (80, 0, 0), (255, 20, 20))
         M = cv2.moments(mask)
         cx = int(M['m10'] / M['m00'])
         cy = int(M['m01'] / M['m00'])
-        return np.array([cx,0.0, cy])
+        return np.array([cx, 0.0, cy])
 
     def detect_yellow(self, image):
         mask = cv2.inRange(image, (0, 200, 200), (0, 255, 255))
         M = cv2.moments(mask)
         cx = int(M['m10'] / M['m00'])
         cy = int(M['m01'] / M['m00'])
-        return np.array([cx,0.0, cy])
+        return np.array([cx, 0.0, cy])
 
     def pixel2meter(self, image):
         c_1 = self.detect_yellow(image)
@@ -75,15 +79,34 @@ class image_converter:
         distance = np.sqrt(np.sum((c_1 - c_2) ** 2))
         return 2.5 / distance
 
-    def find_angles(self, a,red,green,blue,yellow):
-        red = red*a
-        green = green*a
-        blue = blue*a
-        yellow = yellow*a
-        joint2 = 0-(1.57+np.arctan2((green[2]-blue[2]), (green[0]-blue[0])))
-        joint3 = (1.57+np.arctan2((green[2]-blue[2]), (green[1]-blue[1])))
-        joint4 = np.arctan(((red[2]-green[2]) / ((np.sqrt(((red[0]-green[0])**2)+((red[1]-green[1])**2))))))
+    def find_angles(self, a, red, green, blue, yellow):
+        red = red * a
+        green = green * a
+        blue = blue * a
+        yellow = yellow * a
+        joint2 = 0 - (1.57 + np.arctan2((green[2] - blue[2]), (green[0] - blue[0])))
+        joint3 = (1.57 + np.arctan2((green[2] - blue[2]), (green[1] - blue[1])))
+        joint4 = np.arctan(((red[2] - green[2]) / ((np.sqrt(((red[0] - green[0]) ** 2) + ((red[1] - green[1]) ** 2))))))
         return np.array([joint2, joint3, joint4])
+
+    def detect_target(self, img):
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV_FULL)
+        mask = cv2.inRange(hsv, (10, 100, 20), (25, 255, 255))
+        gray_masked = cv2.bitwise_and(gray, gray, mask=mask)
+        blurred = cv2.medianBlur(gray_masked, 5)
+        circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, 1, 1000,
+                                   param1=50, param2=15, minRadius=0, maxRadius=100)
+        yel = self.detect_yellow(img)
+        yel = np.float64(yel)
+        if circles is None:
+            circles = self.circless
+        else:
+            circles = np.uint16(circles)
+            self.circless = circles
+        for i in circles[0, :]:
+            result = np.array([(i[0]-yel[0]), -(i[1]-yel[2])])
+        return result
 
     # Receive data from camera 1, process it, and publish
 
@@ -138,7 +161,7 @@ class image_converter:
         blue[1] = data.data[2]
         yellow[1] = data.data[3]
         a = self.pixel2meter(self.cv_image1)
-        angles = self.find_angles(a,red,green,blue,yellow)
+        angles = self.find_angles(a, red, green, blue, yellow)
         gj_2 = Float64()
         gj_2.data = angles[0]
         gj_3 = Float64()
@@ -148,6 +171,20 @@ class image_converter:
         self.gjoint2_pub.publish(gj_2)
         self.gjoint3_pub.publish(gj_3)
         self.gjoint4_pub.publish(gj_4)
+
+    def target_callback(self, data):
+        a = self.pixel2meter(self.cv_image1)
+        y = Float64()
+        y.data = a*data.data[0]
+        aa = self.detect_target(self.cv_image1)
+        x = Float64()
+        x.data = a*aa[0]
+        z = Float64()
+        z.data = a*aa[1]
+        self.target_x_pub.publish(x)
+        self.target_y_pub.publish(y)
+        self.target_z_pub.publish(z)
+
 # call the class
 def main(args):
     ic = image_converter()

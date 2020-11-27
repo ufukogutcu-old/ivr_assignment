@@ -20,6 +20,7 @@ class image_converter:
     # initialize a publisher to send images from camera2 to a topic named image_topic2
     self.image_pub2 = rospy.Publisher("image_topic2",Image, queue_size = 1)
     self.y_coordinates = rospy.Publisher("/ycor",Float64MultiArray, queue_size = 1)
+    self.target_coordinates = rospy.Publisher("/target_cords", Float64MultiArray, queue_size=1)
     # initialize a subscriber to recieve messages rom a topic named /robot/camera1/image_raw and use callback function to recieve data
     self.image_sub2 = rospy.Subscriber("/camera2/robot/image_raw",Image,self.callback2)
     # initialize the bridge between openCV and ROS
@@ -28,6 +29,7 @@ class image_converter:
     self.memory_green = [0, 0]
     self.memory_blue = [0, 0]
     self.memory_yellow = [0, 0]
+    self.circless = np.uint16(np.zeros((1,1,3)))
 
   def detect_red(self, image):
     mask = cv2.inRange(image, (0, 0, 80), (20, 20, 255))
@@ -47,6 +49,26 @@ class image_converter:
     mask = cv2.inRange(image, (0,200,200),(0,255,255))
     M = cv2.moments(mask)
     return int(M['m10'] / M['m00'])
+  def detect_target(self, img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV_FULL)
+    mask = cv2.inRange(hsv, (10, 100, 20), (25, 255, 255))
+    gray_masked = cv2.bitwise_and(gray, gray, mask=mask)
+    blurred = cv2.medianBlur(gray_masked, 5)
+    circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, 1, 1000,
+                               param1=50, param2=15, minRadius=0, maxRadius=100)
+
+    yel = self.detect_yellow(img)
+    yel = np.float64(yel)
+    if circles is None:
+      circles = self.circless
+    else:
+      circles = np.uint16(circles)
+      self.circless = circles
+    cords = Float64MultiArray()
+    for i in circles[0, :]:
+      cords.data = np.array([(i[0]-(yel)),i[1]])
+    self.target_coordinates.publish(cords)
 
   # Recieve data, process it, and publish
   def callback2(self,data):
@@ -56,7 +78,7 @@ class image_converter:
     except CvBridgeError as e:
       print(e)
     # Uncomment if you want to save the image
-    #cv2.imwrite('image_copy.png', cv_image)
+    #cv2.imwrite('image_copy.png', self.cv_image2)
     #im2=cv2.imshow('window2', self.cv_image2)
     cv2.waitKey(1)
     try:
@@ -87,6 +109,7 @@ class image_converter:
       self.image_pub2.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
     except CvBridgeError as e:
       print(e)
+    self.detect_target(self.cv_image2)
 
 # call the class
 def main(args):
